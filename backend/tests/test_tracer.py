@@ -166,3 +166,10 @@ def test_methods_and_classes(trace):
     # Class bodies do not create frames; methods' parent is Global.
     assert [f["label"] for f in step["frames"]] == ["f1: __init__", "f2: inc"]
     assert all(f["parent"] == "Global" for f in step["frames"])
+
+
+def test_empty_tuple_is_shown_inline(trace):
+    result = trace("def last(s):\n    if s.rest is Link.empty:\n        return s.rest\n    return last(s.rest)\nx = last(Link(1, Link(2)))\n")
+    step = result["steps"][-1]
+    assert dict(step["globals"])["x"] == prim("()")
+    assert all(obj["t"] != "tuple" for obj in step["heap"].values())

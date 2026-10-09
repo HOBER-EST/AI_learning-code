@@ -441,6 +441,9 @@ class Tracer:
     def _encode(self, value, heap, queue) -> dict:
         if isinstance(value, _PRIMITIVE_TYPES):
             return {"t": "prim", "v": _prim_repr(value)}
+        if type(value) is tuple and not value:
+            # Link.empty is (); CS61A diagrams show it inline, not as an object.
+            return {"t": "prim", "v": "()"}
         if isinstance(value, types.ModuleType):
             return {"t": "prim", "v": f"<module '{value.__name__}'>"}
         if isinstance(value, type) and value.__module__ == "builtins":

@@ -4,7 +4,8 @@ Isolation layers (best effort, not a hardened security boundary):
 
 * a fresh ``python -I`` interpreter in a throw-away working directory with a
   minimal environment;
-* CPU-time, address-space and file-size limits via ``setrlimit``;
+* CPU-time, address-space and file-size limits via ``setrlimit`` (applied
+  by the child before it runs any student code);
 * a wall-clock timeout that kills the whole process group;
 * an audit hook inside the child that refuses file writes, subprocesses and
   network access (see ``runner/child.py``).
@@ -28,16 +29,6 @@ CHILD_SCRIPT = os.path.join(os.path.dirname(__file__), "runner", "child.py")
 _slots = threading.BoundedSemaphore(config.MAX_CONCURRENT_RUNS)
 
 
-def _limit_resources(cpu_seconds: int) -> None:
-    import resource
-
-    memory = config.MEMORY_LIMIT_MB * 1024 * 1024
-    resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 1))
-    resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
-    resource.setrlimit(resource.RLIMIT_FSIZE, (64 * 1024 * 1024, 64 * 1024 * 1024))
-    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-
-
 def _failure(kind: str, message: str, detail: str = "") -> dict:
     return {
         "ok": False,
@@ -56,13 +47,9 @@ def run_in_sandbox(request: dict, timeout: float) -> dict:
             "PYTHONHASHSEED": "0",
             "PYTHONDONTWRITEBYTECODE": "1",
         }
-        preexec = None
-        if sys.platform != "win32":
-            cpu = int(timeout) + 1
-
-            def preexec():
-                _limit_resources(cpu)
-
+        # Resource limits are applied by the child itself (see child.py):
+        # preexec_fn is not safe in a multi-threaded server.
+        request = {**request, "limits": {"cpu": int(timeout) + 1, "memory_mb": config.MEMORY_LIMIT_MB}}
         proc = subprocess.Popen(
             [sys.executable, "-I", CHILD_SCRIPT, result_path],
             stdin=subprocess.PIPE,
@@ -70,7 +57,6 @@ def run_in_sandbox(request: dict, timeout: float) -> dict:
             stderr=subprocess.PIPE,
             cwd=workdir,
             env=env,
-            preexec_fn=preexec,
             start_new_session=True,
         )
         try:

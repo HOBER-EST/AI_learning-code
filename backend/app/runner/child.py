@@ -58,8 +58,26 @@ def _audit(event, args):
             raise PermissionError("出于安全考虑，本平台禁止写文件")
 
 
+def _apply_limits(limits: dict) -> None:
+    try:
+        import resource
+    except ImportError:  # not available on Windows
+        return
+    cpu = limits.get("cpu")
+    if cpu:
+        resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu + 1))
+    memory_mb = limits.get("memory_mb")
+    if memory_mb:
+        memory = memory_mb * 1024 * 1024
+        resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
+    file_size = 64 * 1024 * 1024
+    resource.setrlimit(resource.RLIMIT_FSIZE, (file_size, file_size))
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+
+
 def main() -> None:
     request = json.loads(sys.stdin.read())
+    _apply_limits(request.get("limits") or {})
     out = open(sys.argv[1], "w", encoding="utf-8")
     sys.stdin = open(os.devnull, encoding="utf-8")
     sys.addaudithook(_audit)
