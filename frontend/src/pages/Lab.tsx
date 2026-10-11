@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { CodeEditor } from "../components/CodeEditor";
+import { ExplainPanel, selectionLabel, type Selection } from "../components/ExplainPanel";
 import { TestResults } from "../components/TestResults";
 import { useToast } from "../components/Toast";
 import { TutorPanel } from "../components/TutorPanel";
@@ -16,7 +17,7 @@ const CODE_KEY = "learn61a:lab-code";
 export const INCOMING_KEY = "learn61a:lab-incoming";
 
 type Busy = null | "run" | "test" | "trace" | "upload";
-type Tab = "output" | "tests" | "tutor";
+type Tab = "output" | "tests" | "explain" | "tutor";
 
 function Spinner({ on }: { on: boolean }) {
   return on ? <span className="spinner" /> : null;
@@ -39,6 +40,12 @@ export function Lab() {
   const notify = useToast();
   // Bumped for every new result so result panels replay their entrance animation.
   const [version, setVersion] = useState(0);
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const [explainToken, setExplainToken] = useState(0);
+  const explain = () => {
+    setTab("explain");
+    setExplainToken((t) => t + 1);
+  };
 
   useEffect(() => save(CODE_KEY, code), [code]);
 
@@ -195,7 +202,14 @@ export function Lab() {
               {busy === "test" ? "测试中…" : "✓ 运行测试"}
             </button>
           </div>
-          <CodeEditor value={code} onChange={setCode} onDropFile={doUpload} height="460px" running={busy !== null} />
+          <CodeEditor
+            value={code}
+            onChange={setCode}
+            onDropFile={doUpload}
+            height="460px"
+            running={busy !== null}
+            onSelectionChange={setSelection}
+          />
           <div className="toolbar section-gap">
             <label className="trace-call">
               <span className="muted">可视化调用</span>
@@ -207,6 +221,9 @@ export function Lab() {
                 aria-label="可视化调用"
               />
             </label>
+            <button onClick={explain} title="讲解代码；在编辑器里选中几行则只讲解选中部分" data-testid="explain-button">
+              {selectionLabel(selection)}
+            </button>
             <button
               className={`primary ${busy === "trace" ? "busy" : ""}`}
               onClick={() => doTrace(traceCall || autoCall)}
@@ -243,14 +260,21 @@ export function Lab() {
                 </span>
               )}
             </button>
+            <button className={tab === "explain" ? "active" : ""} onClick={() => setTab("explain")}>
+              讲解
+            </button>
             <button className={tab === "tutor" ? "active" : ""} onClick={() => setTab("tutor")}>
               AI 导师
             </button>
           </div>
-          <div className="card-body panel-enter" key={tab}>
+          <div className="card-body panel-enter" key={tab} hidden={tab === "explain"}>
             {tab === "output" && <RunOutput key={version} run={run} />}
             {tab === "tests" && <TestResults key={version} result={tests} onVisualize={(src) => doTrace(src)} />}
             {tab === "tutor" && <TutorPanel code={code} testResults={tests} />}
+          </div>
+          {/* Always mounted: keeps the explanation while other tabs are open. */}
+          <div className="card-body" hidden={tab !== "explain"}>
+            <ExplainPanel code={code} selection={selection} call={traceCall || autoCall} startToken={explainToken} />
           </div>
         </div>
       </div>

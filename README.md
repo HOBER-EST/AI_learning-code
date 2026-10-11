@@ -17,7 +17,8 @@
 | Environment Diagram | CS61A 风格：编号帧 `f1: fact [parent=Global]`、Return value、已返回帧、闭包 parent、λ 帧、指针箭头；`Link` 画成盒子-指针链，`Tree` 画成树 |
 | 交互式练习 | 22 道练习：递归 8、链表 6、树 8（含函数式 tree ADT）；隐藏测试、代码要求（必须递归 / 不准循环）、渐进提示、参考答案、进度记录 |
 | WWPD 测验 | 17 道 “What Would Python Display?” 题，答案经真实 Python 校验 |
-| AI 导师 | 离线规则导师（AST 诊断：缺少 base case、参数不变小、丢弃递归结果、`Link.empty` 误用……）；设置 `ANTHROPIC_API_KEY` 后由 Claude 进行苏格拉底式引导 |
+| AI 导师 | 离线规则导师（AST 诊断：缺少 base case、参数不变小、丢弃递归结果、`Link.empty` 误用……）；在“设置”页填写 Anthropic API key 后由 Claude 进行苏格拉底式引导 |
+| 讲解代码 | 讲解整段代码或选中的几行：先真实运行一遍，再逐行说明、分析递归、走一遍例子，可继续追问；Claude 流式输出，无 key 时离线讲解 |
 | 安全运行 | 学生代码在独立子进程中运行：CPU / 内存 / 时间限制，禁止写文件、子进程与网络 |
 
 ## 快速开始
@@ -39,11 +40,7 @@ make dev       # 后端 http://localhost:8000 + 前端 http://localhost:5173
 
 打开 <http://localhost:5173> 即可使用。单进程部署：`make serve`（构建前端后由后端在 :8000 一并提供）。
 
-可选：启用 Claude 导师
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-```
+可选：在平台的 **设置** 页面填写 Anthropic API key，启用 Claude 导师和代码讲解（也可用环境变量 `ANTHROPIC_API_KEY`）。
 
 ## 测试
 
@@ -95,6 +92,9 @@ docs/USAGE.md          使用说明
 | GET | `/api/exercises/{id}/solution` | 参考答案 |
 | GET / POST | `/api/quizzes`、`/api/quizzes/{id}/check` | WWPD 测验 |
 | POST | `/api/tutor` | AI 导师问答 |
+| POST | `/api/explain` | 讲解代码（server-sent events 流式返回） |
+| GET / PUT | `/api/settings` | 读取 / 保存 API key 与模型（仅限本机） |
+| POST | `/api/settings/test` | 测试 API key 与模型是否可用 |
 
 启动后端后访问 <http://localhost:8000/docs> 可查看交互式 API 文档。
 

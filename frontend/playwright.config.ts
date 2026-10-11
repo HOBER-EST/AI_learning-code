@@ -21,8 +21,10 @@ export default defineConfig({
     {
       command: `${python} -m uvicorn app.main:app --port 8000`,
       cwd: "../backend",
+      // Never touch the user's real settings (API key) from tests.
+      env: { LEARN_SETTINGS_FILE: "../frontend/test-results/e2e-settings.json" },
       url: "http://127.0.0.1:8000/api/health",
-      reuseExistingServer: true,
+      reuseExistingServer: false,
     },
     {
       command: "npx vite --port 5173 --strictPort",

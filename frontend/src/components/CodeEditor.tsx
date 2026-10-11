@@ -1,4 +1,4 @@
-import CodeMirror from "@uiw/react-codemirror";
+import CodeMirror, { type ViewUpdate } from "@uiw/react-codemirror";
 import { python } from "@codemirror/lang-python";
 import { useEffect, useState, type DragEvent } from "react";
 
@@ -33,9 +33,11 @@ interface Props {
   onDropFile?: (file: File) => void;
   /** Shows an animated bar while the code is being run. */
   running?: boolean;
+  /** Called with the selected lines (expanded to whole lines), or null. */
+  onSelectionChange?: (selection: { text: string; line: number; lines: number } | null) => void;
 }
 
-export function CodeEditor({ value, onChange, height = "420px", onDropFile, running = false }: Props) {
+export function CodeEditor({ value, onChange, height = "420px", onDropFile, running = false, onSelectionChange }: Props) {
   const dark = useDarkMode();
   const [dragging, setDragging] = useState(false);
 
@@ -65,6 +67,24 @@ export function CodeEditor({ value, onChange, height = "420px", onDropFile, runn
         theme={dark ? "dark" : "light"}
         extensions={extensions}
         onChange={onChange}
+        onUpdate={(update: ViewUpdate) => {
+          if (!onSelectionChange || !(update.selectionSet || update.docChanged)) return;
+          const { state } = update;
+          const range = state.selection.main;
+          if (range.empty) {
+            onSelectionChange(null);
+            return;
+          }
+          const first = state.doc.lineAt(range.from);
+          // A selection ending at the start of a line does not include that line.
+          const lastPos = range.to > range.from && state.doc.lineAt(range.to).from === range.to ? range.to - 1 : range.to;
+          const last = state.doc.lineAt(lastPos);
+          onSelectionChange({
+            text: state.sliceDoc(first.from, last.to),
+            line: first.number,
+            lines: last.number - first.number + 1,
+          });
+        }}
         basicSetup={{ tabSize: 4, foldGutter: false }}
         indentWithTab
       />

@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import ast
+import json
 import logging
 import os
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analyzer, config, exercises, quizzes, sandbox, tutor
+from . import analyzer, config, exercises, quizzes, sandbox, settings, tutor
 
 log = logging.getLogger(__name__)
 
@@ -58,6 +59,25 @@ class TutorRequest(CodeRequest):
     question: str = Field(default="", max_length=4000)
     test_results: dict | None = None
     exercise_id: str | None = None
+
+
+class ExplainRequest(CodeRequest):
+    selection: str | None = Field(default=None, max_length=config.MAX_CODE_BYTES)
+    selection_line: int = Field(default=1, ge=1)
+    question: str = Field(default="", max_length=4000)
+    call: str | None = Field(default=None, max_length=500)
+    exercise_id: str | None = None
+
+
+class SettingsUpdate(BaseModel):
+    api_key: str | None = Field(default=None, max_length=500)
+    clear_key: bool = False
+    model: str | None = None
+
+
+class ConnectionTest(BaseModel):
+    api_key: str | None = Field(default=None, max_length=500)
+    model: str | None = None
 
 
 class AnswerRequest(BaseModel):
@@ -186,6 +206,63 @@ def check_quiz(quiz_id: str, req: AnswerRequest) -> dict:
 def ask_tutor(req: TutorRequest) -> dict:
     ex = exercises.get_exercise(req.exercise_id) if req.exercise_id else None
     return tutor.ask(req.question, req.code, req.test_results, ex)
+
+
+@app.post("/api/explain")
+def explain(req: ExplainRequest) -> StreamingResponse:
+    """Streams an explanation as server-sent events (meta, delta…, done | error)."""
+    ex = exercises.get_exercise(req.exercise_id) if req.exercise_id else None
+
+    def events():
+        try:
+            for kind, payload in tutor.explain_stream(
+                req.code, req.selection, req.selection_line, req.question, req.call, ex
+            ):
+                data = {"type": kind}
+                if kind == "delta":
+                    data["text"] = payload
+                elif kind == "meta":
+                    data.update(payload)
+                elif kind == "error":
+                    data["message"] = payload
+                yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+        except Exception as e:  # noqa: BLE001
+            log.exception("explain failed")
+            yield f"data: {json.dumps({'type': 'error', 'message': f'讲解失败：{type(e).__name__}: {e}'}, ensure_ascii=False)}\n\n"
+
+    # text/event-stream is not buffered by the gzip middleware.
+    return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+
+
+_LOCAL_CLIENTS = {"127.0.0.1", "::1", "localhost", "testclient"}
+
+
+def _local_only(request: Request) -> None:
+    """Settings hold an API key: only this machine may read or change them."""
+    if request.client is None or request.client.host not in _LOCAL_CLIENTS:
+        raise HTTPException(403, "只能在运行本程序的电脑上修改设置")
+
+
+@app.get("/api/settings")
+def get_settings(request: Request) -> dict:
+    _local_only(request)
+    return settings.public()
+
+
+@app.put("/api/settings")
+def put_settings(req: SettingsUpdate, request: Request) -> dict:
+    _local_only(request)
+    try:
+        settings.update(api_key=req.api_key, clear_key=req.clear_key, model=req.model)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    return settings.public()
+
+
+@app.post("/api/settings/test")
+def test_settings(req: ConnectionTest, request: Request) -> dict:
+    _local_only(request)
+    return tutor.check_connection(req.api_key, req.model)
 
 
 _dist = os.path.abspath(config.FRONTEND_DIST)

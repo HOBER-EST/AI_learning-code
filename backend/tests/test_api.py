@@ -10,9 +10,11 @@ client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
-def offline_tutor(monkeypatch):
+def offline_tutor(monkeypatch, tmp_path):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("LEARN_TUTOR_MODEL", raising=False)
+    monkeypatch.setenv("LEARN_SETTINGS_FILE", str(tmp_path / "settings.json"))
 
 
 def test_health():
@@ -111,6 +113,7 @@ def test_tutor_uses_claude_when_configured(monkeypatch):
     fake = SimpleNamespace(beta=SimpleNamespace(messages=FakeMessages()))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setattr(tutor, "_client", fake)
+    monkeypatch.setattr(tutor, "_client_key", "test-key")
     data = client.post(
         "/api/tutor",
         json={"code": "def factorial(n):\n    return n * factorial(n - 1)\n", "question": "提示？", "exercise_id": "factorial"},
@@ -120,7 +123,7 @@ def test_tutor_uses_claude_when_configured(monkeypatch):
         "answer": "想一想 n == 0 时应该返回什么？",
         "findings": data["findings"],
     }
-    assert calls["model"] == tutor.MODEL
+    assert calls["model"] == "claude-opus-5-5"
     assert calls["fallbacks"] == "default"
     prompt = calls["messages"][0]["content"]
     assert "阶乘" in prompt and "factorial(n - 1)" in prompt
@@ -133,6 +136,7 @@ def test_tutor_falls_back_when_claude_fails(monkeypatch):
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setattr(tutor, "_client", SimpleNamespace(beta=SimpleNamespace(messages=Broken())))
+    monkeypatch.setattr(tutor, "_client_key", "test-key")
     data = client.post("/api/tutor", json={"code": "x = 1", "question": "hi"}).json()
     assert data["source"] == "rules" and "notice" in data
 

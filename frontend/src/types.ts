@@ -183,3 +183,24 @@ export interface TutorReply {
   findings: Finding[];
   notice?: string;
 }
+
+export interface ModelOption {
+  id: string;
+  label: string;
+  note: string;
+}
+
+export interface SettingsInfo {
+  has_key: boolean;
+  key_hint: string | null;
+  key_source: "settings" | "env" | null;
+  model: string;
+  models: ModelOption[];
+  settings_file: string;
+}
+
+export type ExplainEvent =
+  | { type: "meta"; source: "claude" | "rules"; model?: string }
+  | { type: "delta"; text: string }
+  | { type: "done" }
+  | { type: "error"; message: string };

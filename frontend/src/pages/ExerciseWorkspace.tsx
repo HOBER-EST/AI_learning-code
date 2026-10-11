@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { CodeEditor } from "../components/CodeEditor";
 import { Confetti } from "../components/Confetti";
+import { ExplainPanel, selectionLabel, type Selection } from "../components/ExplainPanel";
 import { Skeleton } from "../components/Skeleton";
 import { useToast } from "../components/Toast";
 import { Markdown } from "../components/Markdown";
@@ -28,7 +29,9 @@ export function ExerciseWorkspace({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
   const [result, setResult] = useState<TestResult | null>(null);
-  const [tab, setTab] = useState<"tests" | "tutor">("tests");
+  const [tab, setTab] = useState<"tests" | "explain" | "tutor">("tests");
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const [explainToken, setExplainToken] = useState(0);
   const [hints, setHints] = useState(0);
   const [solution, setSolution] = useState<string | null>(null);
   const [traceCall, setTraceCall] = useState("");
@@ -253,12 +256,21 @@ export function ExerciseWorkspace({ id }: { id: string }) {
                 ↺ 重置
               </button>
             </div>
-            <CodeEditor value={code} onChange={setCode} height="380px" running={busy !== null} />
+            <CodeEditor value={code} onChange={setCode} height="380px" running={busy !== null} onSelectionChange={setSelection} />
             <div className="toolbar section-gap">
               <label className="trace-call" style={{ flex: 1 }}>
                 <span className="muted">可视化调用</span>
                 <input type="text" value={traceCall} onChange={(e) => setTraceCall(e.target.value)} style={{ flex: 1 }} aria-label="可视化调用" />
               </label>
+              <button
+                onClick={() => {
+                  setTab("explain");
+                  setExplainToken((t) => t + 1);
+                }}
+                title="讲解代码；在编辑器里选中几行则只讲解选中部分"
+              >
+                {selectionLabel(selection)}
+              </button>
               <button
                 onClick={() => visualize(traceCall)}
                 disabled={busy !== null}
@@ -296,16 +308,20 @@ export function ExerciseWorkspace({ id }: { id: string }) {
                   </span>
                 )}
               </button>
+              <button className={tab === "explain" ? "active" : ""} onClick={() => setTab("explain")}>
+                讲解
+              </button>
               <button className={tab === "tutor" ? "active" : ""} onClick={() => setTab("tutor")}>
                 AI 导师
               </button>
             </div>
-            <div className="card-body panel-enter" key={tab}>
-              {tab === "tests" ? (
-                <TestResults key={version} result={result} onVisualize={(src) => visualize(src)} />
-              ) : (
-                <TutorPanel code={code} testResults={result} exerciseId={ex.id} />
-              )}
+            <div className="card-body panel-enter" key={tab} hidden={tab === "explain"}>
+              {tab === "tests" && <TestResults key={version} result={result} onVisualize={(src) => visualize(src)} />}
+              {tab === "tutor" && <TutorPanel code={code} testResults={result} exerciseId={ex.id} />}
+            </div>
+            {/* Always mounted: keeps the explanation while other tabs are open. */}
+            <div className="card-body" hidden={tab !== "explain"}>
+              <ExplainPanel code={code} selection={selection} call={traceCall} exerciseId={ex.id} startToken={explainToken} />
             </div>
           </div>
         </div>

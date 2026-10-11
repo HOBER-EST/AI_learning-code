@@ -6,6 +6,7 @@ import { Exercises } from "./pages/Exercises";
 import { Guide } from "./pages/Guide";
 import { Lab } from "./pages/Lab";
 import { Quiz } from "./pages/Quiz";
+import { SETTINGS_CHANGED, Settings } from "./pages/Settings";
 
 function useHashRoute(): string {
   const [hash, setHash] = useState(() => window.location.hash || "#/lab");
@@ -22,6 +23,7 @@ const NAV = [
   { path: "/exercises", label: "练习" },
   { path: "/quiz", label: "WWPD 测验" },
   { path: "/guide", label: "使用说明" },
+  { path: "/settings", label: "设置" },
 ];
 
 type Theme = "auto" | "light" | "dark";
@@ -44,13 +46,17 @@ export function App() {
   const [windowError, setWindowError] = useState<string | null>(null);
 
   useEffect(() => {
-    api
-      .health()
-      .then((h) => {
-        setTutor(h.tutor);
-        setWindowError(h.window_error ?? null);
-      })
-      .catch(() => setTutor("offline"));
+    const refresh = () =>
+      api
+        .health()
+        .then((h) => {
+          setTutor(h.tutor);
+          setWindowError(h.window_error ?? null);
+        })
+        .catch(() => setTutor("offline"));
+    void refresh();
+    window.addEventListener(SETTINGS_CHANGED, refresh);
+    return () => window.removeEventListener(SETTINGS_CHANGED, refresh);
   }, []);
 
   const exerciseMatch = route.match(/^\/exercises\/([\w-]+)$/);
@@ -59,6 +65,7 @@ export function App() {
   else if (route.startsWith("/exercises")) page = <Exercises />;
   else if (route.startsWith("/quiz")) page = <Quiz />;
   else if (route.startsWith("/guide")) page = <Guide />;
+  else if (route.startsWith("/settings")) page = <Settings />;
   else page = <Lab />;
 
   return (
@@ -76,9 +83,11 @@ export function App() {
           ))}
         </nav>
         <span className="header-spacer" />
-        <span className="tutor-badge" title="AI 导师模式">
-          {tutor === "claude" && "AI 导师：Claude"}
-          {tutor === "rules" && "AI 导师：离线规则"}
+        <span className="tutor-badge" title="AI 导师模式（点击修改设置）" data-testid="tutor-badge">
+          <a href="#/settings">
+            {tutor === "claude" && "AI 导师：Claude"}
+            {tutor === "rules" && "AI 导师：离线规则"}
+          </a>
         </span>
         <button className="small ghost" onClick={cycleTheme} title="切换主题（自动 / 深色 / 浅色）" aria-label="切换主题">
           {theme === "auto" ? "🌓" : theme === "dark" ? "🌙" : "☀️"}

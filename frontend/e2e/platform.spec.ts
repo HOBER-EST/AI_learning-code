@@ -132,3 +132,40 @@ test("keyboard shortcuts run tests and visualize, with feedback", async ({ page 
   await expect(page.getByTestId("visualizer")).toBeVisible();
   await expect(page.getByTestId("toast").filter({ hasText: "已记录" })).toBeVisible();
 });
+
+test("explains the whole program or just the selected lines", async ({ page }) => {
+  await page.goto("/#/lab");
+  await page.getByLabel("载入示例").selectOption("fib");
+  await page.getByTestId("explain-button").click();
+  const output = page.getByTestId("explain-output");
+  await expect(output).toContainText("逐行讲解");
+  await expect(output).toContainText("树递归");
+  await expect(output).toContainText("fib(5) → 5"); // grounded in a real run
+
+  // Select lines 6-7 and explain only those.
+  await page.locator(".cm-line").nth(5).click();
+  await page.keyboard.press("Home");
+  await page.keyboard.press("Shift+ArrowDown");
+  await page.keyboard.press("Shift+End");
+  await expect(page.getByTestId("explain-button")).toHaveText("📖 讲解选中的第 6–7 行");
+  await page.getByTestId("explain-button").click();
+  await expect(output).toContainText("选中的代码");
+  await expect(output).toContainText("第 6 行");
+  await expect(output).not.toContainText("第 10 行");
+});
+
+test("settings store an API key locally and switch the tutor mode", async ({ page }) => {
+  await page.goto("/#/settings");
+  await expect(page.getByTestId("settings-status")).toContainText("离线规则模式");
+  await page.getByLabel("Anthropic API key").fill("sk-ant-api03-e2e-placeholder-wxyz");
+  await page.locator(".model-option", { hasText: "Haiku" }).click();
+  await page.getByRole("button", { name: "保存" }).click();
+  await expect(page.getByTestId("tutor-badge")).toContainText("AI 导师：Claude");
+  await expect(page.getByTestId("settings-status")).toContainText("sk-ant-…wxyz");
+  await expect(page.getByTestId("settings-status")).toContainText("claude-haiku-5-5");
+  await expect(page.getByLabel("Anthropic API key")).toHaveValue("");
+
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "删除已保存的 key" }).click();
+  await expect(page.getByTestId("tutor-badge")).toContainText("AI 导师：离线规则");
+});

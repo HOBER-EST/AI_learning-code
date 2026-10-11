@@ -1,7 +1,7 @@
 """The AI tutor.
 
-If Claude API credentials are configured (``ANTHROPIC_API_KEY`` or
-``ANTHROPIC_AUTH_TOKEN``), questions are answered by Claude with a Socratic
+If an Anthropic API key is configured (on the settings page, or via
+``ANTHROPIC_API_KEY``), questions are answered by Claude with a Socratic
 CS61A-TA persona. Otherwise - or if the API call fails - a rule-based answer
 is assembled from the static analysis and the test results, so the platform
 works fully offline.
@@ -12,11 +12,10 @@ from __future__ import annotations
 import logging
 import os
 
+from . import explainer, settings
 from .analyzer import analyze
 
 log = logging.getLogger(__name__)
-
-MODEL = os.environ.get("LEARN_TUTOR_MODEL", "claude-opus-5-5")
 
 SYSTEM_PROMPT = """你是 UC Berkeley CS61A 课程的一名耐心的助教，正在帮助中文学生学习递归（Recursion）、链表（Link）和树（Tree）。
 
@@ -33,19 +32,57 @@ SYSTEM_PROMPT = """你是 UC Berkeley CS61A 课程的一名耐心的助教，正
 def claude_enabled() -> bool:
     if os.environ.get("LEARN_TUTOR", "").lower() == "off":
         return False
-    return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
+    return settings.api_key()[0] is not None
 
 
 _client = None
+_client_key: str | None = None
 
 
 def _get_client():
-    global _client
-    if _client is None:
+    """An Anthropic client for the currently configured key (rebuilt if it changes)."""
+    global _client, _client_key
+    key = settings.api_key()[0]
+    if _client is None or key != _client_key:
         import anthropic
 
-        _client = anthropic.Anthropic()
+        _client = anthropic.Anthropic(api_key=key)
+        _client_key = key
     return _client
+
+
+def _request_options(model: str) -> dict:
+    """Model-specific request options shared by every tutor call."""
+    options: dict = {"output_config": {"effort": "medium"}}
+    # Server-side fallback re-runs a declined request on another model. Haiku
+    # has no fallback model, so the parameter is not sent for it.
+    if not model.startswith("claude-haiku"):
+        options["betas"] = ["server-side-fallback-2026-07-01"]
+        options["fallbacks"] = "default"
+    return options
+
+
+def check_connection(api_key: str | None = None, model: str | None = None) -> dict:
+    """Verify a key and model with a cheap Models API call (no tokens are billed)."""
+    import anthropic
+
+    key = api_key or settings.api_key()[0]
+    model = model or settings.model()
+    if not key:
+        return {"ok": False, "message": "还没有填写 API key。"}
+    try:
+        anthropic.Anthropic(api_key=key, max_retries=0, timeout=15).models.retrieve(model)
+    except anthropic.AuthenticationError:
+        return {"ok": False, "message": "API key 无效：请检查是否复制完整（以 sk-ant- 开头）。"}
+    except anthropic.PermissionDeniedError:
+        return {"ok": False, "message": "这个 API key 没有权限使用该模型。"}
+    except anthropic.NotFoundError:
+        return {"ok": False, "message": f"找不到模型 {model}，请换一个模型。"}
+    except anthropic.APIConnectionError:
+        return {"ok": False, "message": "连不上 Anthropic 服务器：请检查网络或代理设置。"}
+    except anthropic.APIStatusError as e:
+        return {"ok": False, "message": f"Anthropic 返回错误（{e.status_code}）：{e.message}"}
+    return {"ok": True, "message": f"连接成功，将使用 {model}。"}
 
 
 def _format_results(test_results: dict | None) -> str:
@@ -126,12 +163,11 @@ def ask(question: str, code: str, test_results: dict | None = None, exercise=Non
     context.append(f"## 静态分析\n{_format_findings(findings)}")
     context.append(f"## 学生的问题\n{question.strip() or '我的代码哪里有问题？请给我一点提示。'}")
     try:
+        model = settings.model()
         response = _get_client().beta.messages.create(
-            model=MODEL,
+            model=model,
             max_tokens=16000,
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-            output_config={"effort": "medium"},
+            **_request_options(model),
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": "\n\n".join(context)}],
         )
@@ -149,3 +185,76 @@ def ask(question: str, code: str, test_results: dict | None = None, exercise=Non
 
 def _numbered(code: str) -> str:
     return "\n".join(f"{i:>3} | {line}" for i, line in enumerate(code.split("\n"), start=1))
+
+
+EXPLAIN_PROMPT = """你是 UC Berkeley CS61A 课程的一名助教，正在给中文学生**讲解一段 Python 代码**，重点是递归（Recursion）、链表（Link）和树（Tree）。
+
+讲解要求：
+- 用中文，Markdown 格式，语气友好清晰；引用代码时注明行号（行号以提供的带行号代码为准）。
+- 结构：
+  1. **整体在做什么**：两三句话说明代码的目的。
+  2. **逐段讲解**：按代码顺序解释关键语句，说明每一步为什么这样写。
+  3. **递归分析**（如果有递归）：基本情况是什么、问题如何一步步变小、怎样“信任递归调用”把子问题的答案组合成当前答案；如果是树递归，指出调用树的形状。
+  4. **走一遍例子**：用提供的“实际运行结果”（这是在沙箱中真实执行得到的事实）一步步说明调用和返回的过程，不要编造与之矛盾的结果。
+  5. **注意事项**：指出代码中的错误、隐患或可以改进的地方（如重复计算、缺少 return）。
+- 如果代码是一道练习的未完成答案，只讲解学生已经写出的部分和思路方向，**不要直接写出完整解法**。
+- 如果学生只选中了一部分代码，重点讲解选中的部分，必要时结合上下文。
+- 如果学生提出了具体问题，先直接回答这个问题。"""
+
+
+def _numbered_from(code: str, start: int) -> str:
+    return "\n".join(f"{i:>3} | {line}" for i, line in enumerate(code.split("\n"), start=start))
+
+
+def explain_stream(
+    code: str,
+    selection: str | None = None,
+    selection_line: int = 1,
+    question: str = "",
+    call: str | None = None,
+    exercise=None,
+):
+    """Yield (event, payload) pairs: ("meta", {...}), ("delta", text), ("done", None) or ("error", message)."""
+    summary = explainer.execution_summary(code, call)
+
+    if not claude_enabled():
+        yield "meta", {"source": "rules"}
+        text = explainer.explain_offline(code, selection, selection_line, summary)
+        # Emit paragraph by paragraph so the UI fills in progressively.
+        for chunk in text.split("\n"):
+            yield "delta", chunk + "\n"
+        yield "done", None
+        return
+
+    model = settings.model()
+    yield "meta", {"source": "claude", "model": model}
+    context = []
+    if exercise is not None:
+        context.append(f"## 练习题目：{exercise.title}\n{exercise.description}")
+    context.append(f"## 完整代码（带行号）\n```python\n{_numbered(code)}\n```")
+    if selection and selection.strip():
+        context.append(
+            f"## 学生选中的部分（从第 {selection_line} 行开始）\n```python\n{_numbered_from(selection, selection_line)}\n```"
+        )
+    context.append(f"## 实际运行结果（沙箱真实执行）\n{explainer.format_summary(summary)}")
+    context.append(
+        "## 学生的请求\n" + (question.strip() or ("请讲解我选中的这部分代码。" if selection and selection.strip() else "请讲解这段代码。"))
+    )
+    try:
+        with _get_client().beta.messages.stream(
+            model=model,
+            max_tokens=32000,
+            **_request_options(model),
+            system=EXPLAIN_PROMPT,
+            messages=[{"role": "user", "content": "\n\n".join(context)}],
+        ) as stream:
+            for text in stream.text_stream:
+                yield "delta", text
+            final = stream.get_final_message()
+        if final.stop_reason == "refusal":
+            yield "error", "Claude 拒绝了这次讲解请求，请换一种问法或只选中部分代码再试。"
+            return
+        yield "done", None
+    except Exception as e:  # noqa: BLE001 - surface API problems to the user
+        log.warning("Claude explain request failed: %s", e)
+        yield "error", f"Claude 暂时不可用（{type(e).__name__}）。可以在“设置”里点“测试连接”检查 API key 和网络。"

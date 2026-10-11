@@ -69,6 +69,17 @@ def main() -> None:
 
         blocked = post(base, "/api/run", {"code": "open('x.txt', 'w')"})
         assert blocked["error"]["type"] == "PermissionError", blocked
+        with urllib.request.urlopen(base + "/api/settings", timeout=10) as r:
+            assert "models" in json.load(r), "settings endpoint broken"
+
+        req = urllib.request.Request(
+            base + "/api/explain",
+            data=json.dumps({"code": "def f(n):\n    return n\n", "call": "f(1)"}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=60) as r:
+            stream = r.read().decode("utf-8")
+        assert '"type": "done"' in stream and "逐行讲解" in stream, stream[:500]
         print("smoke test passed")
     finally:
         proc.terminate()
