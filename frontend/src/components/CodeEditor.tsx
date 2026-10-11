@@ -31,9 +31,11 @@ interface Props {
   onChange: (value: string) => void;
   height?: string;
   onDropFile?: (file: File) => void;
+  /** Shows an animated bar while the code is being run. */
+  running?: boolean;
 }
 
-export function CodeEditor({ value, onChange, height = "420px", onDropFile }: Props) {
+export function CodeEditor({ value, onChange, height = "420px", onDropFile, running = false }: Props) {
   const dark = useDarkMode();
   const [dragging, setDragging] = useState(false);
 
@@ -47,7 +49,7 @@ export function CodeEditor({ value, onChange, height = "420px", onDropFile }: Pr
 
   return (
     <div
-      className={`editor-shell ${dragging ? "dragging" : ""}`}
+      className={`editor-shell ${dragging ? "dragging" : ""} ${running ? "running" : ""}`}
       onDragOver={(e) => {
         if (!onDropFile || !e.dataTransfer.types.includes("Files")) return;
         e.preventDefault();

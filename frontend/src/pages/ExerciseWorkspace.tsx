@@ -1,12 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { CodeEditor } from "../components/CodeEditor";
+import { Confetti } from "../components/Confetti";
+import { Skeleton } from "../components/Skeleton";
+import { useToast } from "../components/Toast";
 import { Markdown } from "../components/Markdown";
 import { TestResults } from "../components/TestResults";
 import { TutorPanel } from "../components/TutorPanel";
 import { Visualizer } from "../components/Visualizer";
 import { withTraceCall } from "../lib/code";
-import { load, markSolved, save } from "../lib/storage";
+import { formatDuration, MOD, testToast, timed, useRunShortcuts } from "../lib/feedback";
+import { load, markSolved, save, solvedExercises } from "../lib/storage";
 import type { ExerciseDetail, TestResult, TraceResult } from "../types";
 import { Difficulty, TOPIC_ICON } from "./Exercises";
 
@@ -30,7 +34,24 @@ export function ExerciseWorkspace({ id }: { id: string }) {
   const [traceCall, setTraceCall] = useState("");
   const [trace, setTrace] = useState<{ result: TraceResult; code: string } | null>(null);
   const [mode, setMode] = useState<"edit" | "viz">("edit");
+  const [version, setVersion] = useState(0);
+  const [celebrate, setCelebrate] = useState(0);
+  const notify = useToast();
   const draftKey = `learn61a:exercise:${id}`;
+  // Keyboard shortcuts are registered before the early returns below (hook
+  // order), and call whatever the latest actions are.
+  const actions = useRef({ submit: () => {}, visualize: () => {} });
+  useRunShortcuts(
+    () => actions.current.submit(),
+    () => actions.current.visualize(),
+    mode === "edit",
+  );
+
+  useEffect(() => {
+    if (!celebrate) return;
+    const timer = setTimeout(() => setCelebrate(0), 1800);
+    return () => clearTimeout(timer);
+  }, [celebrate]);
 
   useEffect(() => {
     setEx(null);
@@ -53,7 +74,15 @@ export function ExerciseWorkspace({ id }: { id: string }) {
   }, [code, ex, id, draftKey]);
 
   if (loadError) return <div className="page"><div className="alert err">{loadError}</div></div>;
-  if (!ex) return <div className="page"><div className="empty-state">加载中…</div></div>;
+  if (!ex)
+    return (
+      <div className="page">
+        <div className="workspace">
+          <Skeleton lines={8} card />
+          <Skeleton lines={12} card />
+        </div>
+      </div>
+    );
 
   const guard = async (kind: Busy, fn: () => Promise<void>) => {
     setBusy(kind);
@@ -62,37 +91,56 @@ export function ExerciseWorkspace({ id }: { id: string }) {
       await fn();
     } catch (e) {
       setError((e as Error).message);
+      notify((e as Error).message, "error");
     } finally {
       setBusy(null);
     }
   };
 
   const runVisible = () =>
+    busy === null &&
     guard("test", async () => {
-      setResult(await api.test(code));
+      const [res, ms] = await timed(() => api.test(code));
+      setResult(res);
+      setVersion((v) => v + 1);
       setTab("tests");
+      notify(...testToast(res, ms));
     });
 
   const submit = () =>
+    busy === null &&
     guard("submit", async () => {
-      const res = await api.submit(ex.id, code);
+      const firstSolve = !solvedExercises().has(ex.id);
+      const [res, ms] = await timed(() => api.submit(ex.id, code));
       setResult(res);
+      setVersion((v) => v + 1);
       setTab("tests");
-      if (res.solved) markSolved(ex.id);
+      if (res.solved) {
+        markSolved(ex.id);
+        setCelebrate((c) => c + 1);
+        notify(firstSolve ? `🎉 练习完成：${ex.title}` : "再次全部通过 ✓", "success");
+      } else {
+        notify(...testToast(res, ms));
+      }
     });
 
   const visualize = (call: string) =>
+    busy === null &&
     guard("trace", async () => {
       const traced = withTraceCall(code, call);
-      const res = await api.trace(traced);
+      const [res, ms] = await timed(() => api.trace(traced));
       if (res.sandbox_error) {
         setError(res.sandbox_error.message);
+        notify(res.sandbox_error.message, "error");
         return;
       }
+      notify(`已记录 ${res.steps.length} 步、${res.calls.length} 次调用 · ${formatDuration(ms)}`, "success");
       setTrace({ result: res, code: traced });
       setMode("viz");
       window.scrollTo({ top: 0 });
     });
+
+  actions.current = { submit, visualize: () => visualize(traceCall) };
 
   if (mode === "viz" && trace) {
     return (
@@ -110,6 +158,7 @@ export function ExerciseWorkspace({ id }: { id: string }) {
 
   return (
     <div className="page">
+      {celebrate > 0 && <Confetti key={celebrate} />}
       <div className="row" style={{ marginBottom: 12 }}>
         <a href="#/exercises">← 全部练习</a>
       </div>
@@ -180,11 +229,19 @@ export function ExerciseWorkspace({ id }: { id: string }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
           <div className="card card-body">
             <div className="toolbar">
-              <button onClick={runVisible} disabled={busy !== null}>
-                {busy === "test" && <span className="spinner" />}✓ 运行示例测试
+              <button onClick={runVisible} disabled={busy !== null} className={busy === "test" ? "busy" : ""}>
+                {busy === "test" && <span className="spinner" />}
+                {busy === "test" ? "测试中…" : "✓ 运行示例测试"}
               </button>
-              <button className="primary" onClick={submit} disabled={busy !== null} data-testid="submit">
-                {busy === "submit" && <span className="spinner" />}🚀 提交（含隐藏测试）
+              <button
+                className={`primary ${busy === "submit" ? "busy" : ""}`}
+                onClick={submit}
+                disabled={busy !== null}
+                data-testid="submit"
+                title={`提交（${MOD}+Enter）`}
+              >
+                {busy === "submit" && <span className="spinner" />}
+                {busy === "submit" ? "评测中…" : "🚀 提交（含隐藏测试）"}
               </button>
               <span className="grow" />
               <button
@@ -196,17 +253,37 @@ export function ExerciseWorkspace({ id }: { id: string }) {
                 ↺ 重置
               </button>
             </div>
-            <CodeEditor value={code} onChange={setCode} height="380px" />
+            <CodeEditor value={code} onChange={setCode} height="380px" running={busy !== null} />
             <div className="toolbar section-gap">
               <label className="trace-call" style={{ flex: 1 }}>
                 <span className="muted">可视化调用</span>
                 <input type="text" value={traceCall} onChange={(e) => setTraceCall(e.target.value)} style={{ flex: 1 }} aria-label="可视化调用" />
               </label>
-              <button onClick={() => visualize(traceCall)} disabled={busy !== null}>
-                {busy === "trace" && <span className="spinner" />}🔍 可视化
+              <button
+                onClick={() => visualize(traceCall)}
+                disabled={busy !== null}
+                className={busy === "trace" ? "busy" : ""}
+                title={`可视化（${MOD}+Shift+Enter）`}
+              >
+                {busy === "trace" && <span className="spinner" />}
+                {busy === "trace" ? "正在追踪…" : "🔍 可视化"}
               </button>
             </div>
             {error && <div className="alert err">{error}</div>}
+            <div className="status-line">
+              <span className={`status-dot ${busy ? "busy" : result ? (result.ok ? "ok" : "err") : ""}`} />
+              <span>
+                {busy
+                  ? "正在运行…"
+                  : result?.summary
+                    ? `上次结果：${result.summary.passed} / ${result.summary.total} 通过`
+                    : "还没有运行过测试"}
+              </span>
+              <span className="header-spacer" />
+              <span>
+                <kbd>{MOD}</kbd>+<kbd>Enter</kbd> 提交 · <kbd>{MOD}</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd> 可视化
+              </span>
+            </div>
           </div>
 
           <div className="card">
@@ -223,9 +300,9 @@ export function ExerciseWorkspace({ id }: { id: string }) {
                 AI 导师
               </button>
             </div>
-            <div className="card-body">
+            <div className="card-body panel-enter" key={tab}>
               {tab === "tests" ? (
-                <TestResults result={result} onVisualize={(src) => visualize(src)} />
+                <TestResults key={version} result={result} onVisualize={(src) => visualize(src)} />
               ) : (
                 <TutorPanel code={code} testResults={result} exerciseId={ex.id} />
               )}

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { Skeleton, SkeletonGrid } from "../components/Skeleton";
+import { ProgressBar } from "../components/TestResults";
 import { solvedExercises } from "../lib/storage";
 import type { ExerciseSummary, Topic, TopicInfo } from "../types";
 
@@ -31,7 +33,13 @@ export function Exercises() {
   }, []);
 
   if (error) return <div className="page"><div className="alert err">{error}</div></div>;
-  if (!items) return <div className="page"><div className="empty-state">加载中…</div></div>;
+  if (!items)
+    return (
+      <div className="page">
+        <Skeleton lines={2} />
+        <SkeletonGrid count={8} />
+      </div>
+    );
 
   const done = items.filter((e) => solved.has(e.id)).length;
 
@@ -47,9 +55,7 @@ export function Exercises() {
         <span className="badge ok">
           已完成 {done} / {items.length}
         </span>
-        <div className="progress-bar" style={{ maxWidth: 360, background: "var(--surface-2)" }}>
-          <div style={{ width: `${(done / items.length) * 100}%` }} />
-        </div>
+        <ProgressBar pct={(done / items.length) * 100} style={{ maxWidth: 360, background: "var(--surface-2)" }} />
       </div>
       {TOPIC_ORDER.map((topic) => {
         const list = items.filter((e) => e.topic === topic);
@@ -66,8 +72,13 @@ export function Exercises() {
             </div>
             {info && <p className="muted" style={{ margin: 0 }}>{info.description}</p>}
             <div className="exercise-grid">
-              {list.map((ex) => (
-                <a className="card exercise-card" href={`#/exercises/${ex.id}`} key={ex.id}>
+              {list.map((ex, i) => (
+                <a
+                  className="card exercise-card"
+                  href={`#/exercises/${ex.id}`}
+                  key={ex.id}
+                  style={{ animationDelay: `${i * 40}ms` }}
+                >
                   <div className="row" style={{ justifyContent: "space-between" }}>
                     <span className="title">{ex.title}</span>
                     {solved.has(ex.id) && <span className="badge ok">✓ 已完成</span>}

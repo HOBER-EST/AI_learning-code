@@ -1,10 +1,12 @@
-import { useMemo } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import { layoutHeap } from "../lib/heapLayout";
+import { EMPTY_DIFF, RETURN_NAME, varKey, type StepDiff } from "../lib/stepDiff";
 import type { Frame, Step, Value } from "../types";
 import { Arrows } from "./Arrows";
 import { ObjectView, ValueView } from "./HeapView";
 
 interface FrameBoxProps {
+  id: string;
   title: string;
   parent?: string;
   vars: [string, Value][];
@@ -13,7 +15,7 @@ interface FrameBoxProps {
   status: "current" | "on-stack" | "exited" | "idle";
 }
 
-function FrameBox({ title, parent, vars, ret, raised, status }: FrameBoxProps) {
+function FrameBox({ id, title, parent, vars, ret, raised, status }: FrameBoxProps) {
   const highlight = status === "current";
   return (
     <div className={`frame ${status}`} data-testid="frame">
@@ -26,7 +28,7 @@ function FrameBox({ title, parent, vars, ret, raised, status }: FrameBoxProps) {
         <table>
           <tbody>
             {vars.map(([name, value]) => (
-              <tr key={name}>
+              <tr key={name} data-var={varKey(id, name)}>
                 <td className="name">{name}</td>
                 <td className="val">
                   <ValueView value={value} highlight={highlight} />
@@ -34,7 +36,7 @@ function FrameBox({ title, parent, vars, ret, raised, status }: FrameBoxProps) {
               </tr>
             ))}
             {ret !== undefined && (
-              <tr className="ret">
+              <tr className="ret" data-var={varKey(id, RETURN_NAME)}>
                 <td className="name">Return value</td>
                 <td className="val">
                   <ValueView value={ret} highlight={highlight} />
@@ -54,7 +56,45 @@ function FrameBox({ title, parent, vars, ret, raised, status }: FrameBoxProps) {
   );
 }
 
-export function EnvironmentDiagram({ step, showExited = true }: { step: Step; showExited?: boolean }) {
+const reduceMotion = () =>
+  typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+/** Briefly highlights what changed in this step (works even if it also changed in the last one). */
+function useFlashChanges(root: React.RefObject<HTMLDivElement | null>, diff: StepDiff, step: Step) {
+  useLayoutEffect(() => {
+    const el = root.current;
+    if (!el || reduceMotion()) return;
+    const flash = getComputedStyle(document.documentElement).getPropertyValue("--flash").trim() || "#ffd84d";
+    const animate = (target: Element, frames: Keyframe[]) => {
+      if (typeof (target as HTMLElement).animate === "function") {
+        (target as HTMLElement).animate(frames, { duration: 1100, easing: "ease-out" });
+      }
+    };
+    el.querySelectorAll<HTMLElement>("[data-var]").forEach((row) => {
+      if (!diff.vars.has(row.dataset.var!)) return;
+      row.querySelectorAll("td").forEach((cell) =>
+        animate(cell, [{ backgroundColor: flash }, { backgroundColor: "transparent" }]),
+      );
+    });
+    el.querySelectorAll<HTMLElement>("[data-obj-id]").forEach((obj) => {
+      if (diff.objects.has(obj.dataset.objId!)) {
+        animate(obj, [{ boxShadow: `0 0 0 4px ${flash}` }, { boxShadow: "0 0 0 0 transparent" }]);
+      }
+    });
+  }, [root, diff, step]);
+}
+
+export function EnvironmentDiagram({
+  step,
+  showExited = true,
+  diff = EMPTY_DIFF,
+}: {
+  step: Step;
+  showExited?: boolean;
+  diff?: StepDiff;
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  useFlashChanges(rootRef, diff, step);
   const layout = useMemo(() => layoutHeap(step, showExited), [step, showExited]);
   const ctx = useMemo(() => ({ heap: step.heap, claimedBy: layout.claimedBy }), [step.heap, layout]);
   // A new object per (step, option) tells the arrows to re-measure.
@@ -68,14 +108,15 @@ export function EnvironmentDiagram({ step, showExited = true }: { step: Step; sh
   };
 
   return (
-    <div className="env-diagram" data-testid="env-diagram">
+    <div className="env-diagram" data-testid="env-diagram" ref={rootRef}>
       <div>
         <div className="env-column-title">帧 Frames</div>
         <div className="frames">
-          <FrameBox title="Global frame" vars={step.globals} status={step.frame === "Global" ? "current" : "on-stack"} />
+          <FrameBox id="Global" title="Global frame" vars={step.globals} status={step.frame === "Global" ? "current" : "on-stack"} />
           {frames.map((f) => (
             <FrameBox
               key={f.id}
+              id={f.id}
               title={f.label}
               parent={f.parent}
               vars={f.vars}

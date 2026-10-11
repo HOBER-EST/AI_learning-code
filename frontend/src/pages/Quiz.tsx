@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { SkeletonGrid } from "../components/Skeleton";
 import { load, save } from "../lib/storage";
 import type { Quiz as QuizItem, QuizCheck, Topic } from "../types";
 import { TOPIC_ICON } from "./Exercises";
@@ -19,14 +20,19 @@ function QuizCard({ quiz, onCorrect }: { quiz: QuizItem; onCorrect: (id: string)
   const [result, setResult] = useState<QuizCheck | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attempts, setAttempts] = useState(0);
+  const [shaking, setShaking] = useState(false);
 
   const check = async () => {
+    if (busy || !answer.trim()) return;
     setBusy(true);
     setError(null);
     try {
       const r = await api.checkQuiz(quiz.id, answer);
       setResult(r);
+      setAttempts((n) => n + 1);
       if (r.correct) onCorrect(quiz.id);
+      else setShaking(true);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -35,13 +41,15 @@ function QuizCard({ quiz, onCorrect }: { quiz: QuizItem; onCorrect: (id: string)
   };
 
   return (
-    <div className="card quiz-card" data-testid="quiz-card">
+    <div className={`card quiz-card ${result?.correct ? "correct" : ""}`} data-testid="quiz-card">
       <div className="quiz-code">
         {quiz.setup}
         {"\n"}
         <b>&gt;&gt;&gt; {quiz.expression}</b>
       </div>
       <textarea
+        className={shaking ? "shake" : undefined}
+        onAnimationEnd={() => setShaking(false)}
         rows={Math.max(1, answer.split("\n").length)}
         value={answer}
         onChange={(e) => {
@@ -70,7 +78,7 @@ function QuizCard({ quiz, onCorrect }: { quiz: QuizItem; onCorrect: (id: string)
       </div>
       {error && <div className="alert err">{error}</div>}
       {result && (
-        <div className={`alert ${result.correct ? "ok" : "err"}`} data-testid="quiz-feedback">
+        <div key={attempts} className={`alert ${result.correct ? "ok celebrate" : "err"}`} data-testid="quiz-feedback">
           <b>{result.correct ? "✓ 正确！" : "✗ 不对哦"}</b>
           {!result.correct && (
             <div>
@@ -104,7 +112,12 @@ export function Quiz() {
   };
 
   if (error) return <div className="page"><div className="alert err">{error}</div></div>;
-  if (!items) return <div className="page"><div className="empty-state">加载中…</div></div>;
+  if (!items)
+    return (
+      <div className="page">
+        <SkeletonGrid count={6} />
+      </div>
+    );
   const shown = items.filter((q) => filter === "all" || q.topic === filter);
 
   return (

@@ -1,4 +1,19 @@
+import { useEffect, useState } from "react";
 import type { TestCase, TestResult } from "../types";
+
+/** Grows from 0 to `pct` after mounting, so each new result visibly fills up. */
+export function ProgressBar({ pct, style }: { pct: number; style?: React.CSSProperties }) {
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setWidth(pct));
+    return () => cancelAnimationFrame(frame);
+  }, [pct]);
+  return (
+    <div className="progress-bar" aria-hidden="true" style={style}>
+      <div style={{ width: `${width}%` }} />
+    </div>
+  );
+}
 
 const STATUS: Record<TestCase["status"], { text: string; cls: string }> = {
   passed: { text: "通过", cls: "ok" },
@@ -60,13 +75,16 @@ export function TestResults({ result, onVisualize }: Props) {
         <span className={`badge ${summary.failed ? "err" : "ok"}`} data-testid="test-summary">
           {summary.passed} / {summary.total} 通过
         </span>
-        <div className="progress-bar" aria-hidden="true">
-          <div style={{ width: `${pct}%` }} />
-        </div>
+        <ProgressBar pct={pct} />
       </div>
-      {result.solved && <div className="alert ok" style={{ marginBottom: 10 }}>🎉 全部测试通过，练习完成！</div>}
+      {result.solved && <div className="alert ok celebrate" style={{ marginBottom: 10 }}>🎉 全部测试通过，练习完成！</div>}
       {ordered.map((c, i) => (
-        <div className={`test-case ${c.status}`} key={i} data-testid="test-case">
+        <div
+          className={`test-case ${c.status}`}
+          key={i}
+          data-testid="test-case"
+          style={{ animationDelay: `${Math.min(i, 12) * 45}ms` }}
+        >
           <div className="head">
             <span className="source">
               {c.origin === "constraint" ? c.source : <>&gt;&gt;&gt; {c.source.split("\n").join("\n... ")}</>}

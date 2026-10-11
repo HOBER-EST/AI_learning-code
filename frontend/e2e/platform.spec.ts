@@ -119,3 +119,16 @@ test("the usage guide is available in the app", async ({ page }) => {
   await page.goto("/#/guide");
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 });
+
+test("keyboard shortcuts run tests and visualize, with feedback", async ({ page }) => {
+  await page.goto("/#/lab");
+  await page.getByLabel("载入示例").selectOption("fact");
+  await page.locator(".cm-content").click();
+  await page.keyboard.press("ControlOrMeta+Enter");
+  await expect(page.getByTestId("toast").first()).toContainText("全部 1 个测试通过");
+  await expect(page.getByTestId("status-line")).toContainText("全部 1 个测试通过");
+
+  await page.keyboard.press("ControlOrMeta+Shift+Enter");
+  await expect(page.getByTestId("visualizer")).toBeVisible();
+  await expect(page.getByTestId("toast").filter({ hasText: "已记录" })).toBeVisible();
+});

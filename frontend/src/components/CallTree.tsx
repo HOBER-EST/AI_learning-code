@@ -129,23 +129,26 @@ export function CallTree({ calls, stepIndex, currentFrame, stackDepth, onJump }:
                   <title>
                     {`${node.id}: ${node.label}${showRet ? ` → ${node.ret}` : ""}${dup ? `\n这个调用共出现 ${dup} 次` : ""}\n点击跳转到这次调用`}
                   </title>
-                  <rect width={w} height={NODE_HEIGHT} />
-                  <text x={w / 2} y={showRet ? 18 : 27} textAnchor="middle">
-                    {node.label}
-                  </text>
-                  {dup && (
-                    <g className="dup-badge" transform={`translate(${w - 6},-6)`}>
-                      <circle r={10} />
-                      <text textAnchor="middle" y={4}>
-                        ×{dup}
-                      </text>
-                    </g>
-                  )}
-                  {showRet && (
-                    <text className="ret" x={w / 2} y={36} textAnchor="middle">
-                      {node.status === "error" ? "⚠ 异常" : `→ ${node.ret}`}
+                  {state === "current" && <rect className="pulse" width={w} height={NODE_HEIGHT} rx={8} />}
+                  <g className="node-body">
+                    <rect width={w} height={NODE_HEIGHT} />
+                    <text x={w / 2} y={showRet ? 18 : 27} textAnchor="middle">
+                      {node.label}
                     </text>
-                  )}
+                    {dup && (
+                      <g className="dup-badge" transform={`translate(${w - 6},-6)`}>
+                        <circle r={10} />
+                        <text textAnchor="middle" y={4}>
+                          ×{dup}
+                        </text>
+                      </g>
+                    )}
+                    {showRet && (
+                      <text className="ret" x={w / 2} y={36} textAnchor="middle">
+                        {node.status === "error" ? "⚠ 异常" : `→ ${node.ret}`}
+                      </text>
+                    )}
+                  </g>
                 </g>
               );
             })}

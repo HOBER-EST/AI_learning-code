@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { TraceResult } from "../types";
 import { CallTree } from "./CallTree";
 import { CodeView } from "./CodeView";
+import { diffSteps } from "../lib/stepDiff";
 import { EnvironmentDiagram } from "./EnvironmentDiagram";
 
 interface Props {
@@ -78,6 +79,7 @@ export function Visualizer({ trace, code, onClose }: Props) {
   const step = trace.steps[index];
   const prev = index > 0 ? trace.steps[index - 1] : undefined;
   const info = useMemo(() => (step ? describe(trace, index) : null), [trace, index, step]);
+  const diff = useMemo(() => (step ? diffSteps(prev, step) : null), [prev, step]);
 
   if (!step) {
     return (
@@ -171,7 +173,10 @@ export function Visualizer({ trace, code, onClose }: Props) {
               <span className="badge accent">
                 第 {index + 1} / {total} 步
               </span>{" "}
-              <span className="event">{info?.event}</span> {info?.detail}
+              <span className="event" key={index}>
+                {info?.event}
+              </span>{" "}
+              {info?.detail}
             </div>
             <div className="muted" style={{ fontSize: 12 }}>
               提示：可以用键盘 ← → 逐步前进或后退。
@@ -181,7 +186,18 @@ export function Visualizer({ trace, code, onClose }: Props) {
         <div className="card card-body">
           <b>程序输出</b>
           <div className="stdout" data-testid="stdout">
-            {step.stdout || <span className="muted">（暂无输出）</span>}
+            {step.stdout ? (
+              <>
+                {step.stdout.slice(0, step.stdout.length - (diff?.newOutput.length ?? 0))}
+                {diff?.newOutput && (
+                  <span className="new-output" key={index}>
+                    {diff.newOutput}
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="muted">（暂无输出）</span>
+            )}
           </div>
         </div>
         {atEnd && trace.truncated && (
@@ -220,7 +236,7 @@ export function Visualizer({ trace, code, onClose }: Props) {
                 调用栈：<span className="mono">{step.stack.join(" → ")}</span>
               </span>
             </div>
-            <EnvironmentDiagram step={step} showExited={showExited} />
+            <EnvironmentDiagram step={step} showExited={showExited} diff={diff ?? undefined} />
           </>
         ) : (
           <CallTree
