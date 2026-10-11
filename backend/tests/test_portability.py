@@ -72,3 +72,15 @@ def test_frozen_app_runs_itself_as_the_child(monkeypatch, tmp_path):
     result = sandbox.trace("def sq(x):\n    return x * x\ny = sq(4)\n")
     assert result["ok"] is True
     assert result["calls"][0]["ret"] == "16"
+
+
+def test_blocked_child_launch_is_reported(monkeypatch):
+    # E.g. antivirus software refusing to start the (unsigned) app executable.
+    def refuse(command, workdir):
+        raise PermissionError(13, "Access is denied")
+
+    monkeypatch.setattr(sandbox, "_spawn", refuse)
+    result = sandbox.run_program("print(1)")
+    assert result["ok"] is False
+    assert result["sandbox_error"]["type"] == "LaunchError"
+    assert "杀毒软件" in result["sandbox_error"]["message"]

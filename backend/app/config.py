@@ -14,3 +14,5 @@ if getattr(sys, "frozen", False):  # packaged desktop app (PyInstaller)
 else:
     _default_dist = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
 FRONTEND_DIST = os.environ.get("LEARN_FRONTEND_DIST", _default_dist)
+# Set by the desktop launcher so error messages can point to its log file.
+LOG_FILE = os.environ.get("LEARN_LOG_FILE", "")

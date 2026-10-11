@@ -43,7 +43,8 @@ def _failure(kind: str, message: str, detail: str = "") -> dict:
 
 def run_in_sandbox(request: dict, timeout: float) -> dict:
     """Run ``request`` (see ``child.py``) and return the decoded JSON result."""
-    with _slots, tempfile.TemporaryDirectory(prefix="learn61a-") as workdir:
+    # ignore_cleanup_errors: on Windows, antivirus scanners briefly lock new files.
+    with _slots, tempfile.TemporaryDirectory(prefix="learn61a-", ignore_cleanup_errors=True) as workdir:
         request_path = os.path.join(workdir, "request.json")
         result_path = os.path.join(workdir, "result.json")
         # Resource limits are applied by the child itself (see child.py):
@@ -55,16 +56,13 @@ def run_in_sandbox(request: dict, timeout: float) -> dict:
             command = [sys.executable, CHILD_FLAG, request_path, result_path]
         else:
             command = [sys.executable, "-I", CHILD_SCRIPT, request_path, result_path]
-        proc = subprocess.Popen(
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=workdir,
-            env=_child_env(),
-            start_new_session=sys.platform != "win32",
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
+        try:
+            proc = _spawn(command, workdir)
+        except OSError as e:
+            return _failure(
+                "LaunchError",
+                f"无法启动代码运行进程：{e}。如果电脑上装了杀毒软件，请把本程序加入信任列表后重试。",
+            )
         try:
             _, stderr = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -89,6 +87,19 @@ def run_in_sandbox(request: dict, timeout: float) -> dict:
         if "MemoryError" in stderr_text:
             return _failure("MemoryError", f"程序超出了 {config.MEMORY_LIMIT_MB}MB 内存限制。", stderr_text)
         return _failure("Crash", f"运行进程异常退出（返回码 {proc.returncode}）。", stderr_text)
+
+
+def _spawn(command: list[str], workdir: str) -> subprocess.Popen:
+    return subprocess.Popen(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=workdir,
+        env=_child_env(),
+        start_new_session=sys.platform != "win32",
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
 
 
 def _child_env() -> dict:

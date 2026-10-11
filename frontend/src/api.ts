@@ -21,6 +21,26 @@ export class ApiError extends Error {
   }
 }
 
+/** A human-readable reason for a failed response. Exported for tests. */
+export async function describeFailure(response: Response): Promise<string> {
+  const base = `请求失败（${response.status}）`;
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    // Not our backend's JSON: the request never reached it (dev proxy with the
+    // backend stopped, or a proxy/VPN app intercepting 127.0.0.1).
+    return (
+      `${base}：后端没有正常响应。请确认后端已启动；如果开着代理或 VPN 软件（如 Clash），` +
+      "请把 127.0.0.1 / localhost 加入直连（绕过代理）列表后重试。"
+    );
+  }
+  const detail = (body as { detail?: unknown } | null)?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) return `${base}：提交的数据格式不正确。`;
+  return base;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
@@ -29,14 +49,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError("无法连接后端服务，请确认后端已启动（默认 http://127.0.0.1:8000）。", 0);
   }
   if (!response.ok) {
-    let message = `请求失败（${response.status}）`;
-    try {
-      const body = await response.json();
-      if (typeof body.detail === "string") message = body.detail;
-    } catch {
-      /* not JSON */
-    }
-    throw new ApiError(message, response.status);
+    throw new ApiError(await describeFailure(response), response.status);
   }
   return response.json() as Promise<T>;
 }

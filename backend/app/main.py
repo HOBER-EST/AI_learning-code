@@ -3,17 +3,32 @@
 from __future__ import annotations
 
 import ast
+import logging
 import os
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import analyzer, config, exercises, quizzes, sandbox, tutor
 
+log = logging.getLogger(__name__)
+
 app = FastAPI(title="CS61A 递归学习平台", version="1.0.0")
+
+
+@app.exception_handler(Exception)
+async def unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+    # Without this the UI only sees "500"; the detail tells the user (and us) what broke.
+    log.exception("Unhandled error on %s %s", request.method, request.url.path)
+    detail = f"服务器内部错误：{type(exc).__name__}: {exc}"
+    if config.LOG_FILE:
+        detail += f"（详细日志：{config.LOG_FILE}）"
+    return JSONResponse(status_code=500, content={"detail": detail})
+
 app.add_middleware(GZipMiddleware, minimum_size=2000)
 app.add_middleware(
     CORSMiddleware,

@@ -13,6 +13,8 @@ Options: ``--browser`` always use the default browser instead of a window;
 
 from __future__ import annotations
 
+import logging
+import logging.handlers
 import os
 import sys
 
@@ -24,6 +26,21 @@ def _run_child() -> None:
     from app.runner import child
 
     child.main(sys.argv[2], sys.argv[3])
+
+
+def _setup_logging() -> str:
+    """Log to ~/.learn61a/desktop.log so problems on users' machines can be diagnosed."""
+    log_dir = os.path.join(os.path.expanduser("~"), ".learn61a")
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, "desktop.log")
+    handler = logging.handlers.RotatingFileHandler(log_file, maxBytes=1_000_000, backupCount=1, encoding="utf-8")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        handlers=[handler],
+    )
+    os.environ["LEARN_LOG_FILE"] = log_file  # read by app.config for error messages
+    return log_file
 
 
 def _free_port() -> int:
@@ -74,6 +91,8 @@ def main() -> None:
         if hasattr(stream, "reconfigure"):  # legacy Windows code pages cannot print Chinese
             stream.reconfigure(encoding="utf-8", errors="replace")
 
+    log_file = _setup_logging()
+
     import threading
     import webbrowser
 
@@ -83,13 +102,15 @@ def main() -> None:
 
     args = sys.argv[1:]
     port = int(args[args.index("--port") + 1]) if "--port" in args else _free_port()
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    # log_config=None: keep our file logging instead of uvicorn's console setup.
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_config=None))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
 
     url = f"http://127.0.0.1:{port}/"
+    logging.getLogger(__name__).info("serving on %s", url)
     if not _wait_until_up(url):
-        print("后端启动失败。", file=sys.stderr)
+        print(f"后端启动失败，详见日志：{log_file}", file=sys.stderr)
         sys.exit(1)
 
     if "--browser" in args or not _open_window(url):

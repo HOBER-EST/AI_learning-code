@@ -135,3 +135,13 @@ def test_tutor_falls_back_when_claude_fails(monkeypatch):
     monkeypatch.setattr(tutor, "_client", SimpleNamespace(beta=SimpleNamespace(messages=Broken())))
     data = client.post("/api/tutor", json={"code": "x = 1", "question": "hi"}).json()
     assert data["source"] == "rules" and "notice" in data
+
+
+def test_unexpected_errors_return_a_readable_detail(monkeypatch):
+    def boom(code):
+        raise RuntimeError("disk on fire")
+
+    monkeypatch.setattr("app.sandbox.run_program", boom)
+    resp = TestClient(app, raise_server_exceptions=False).post("/api/run", json={"code": "x = 1"})
+    assert resp.status_code == 500
+    assert resp.json() == {"detail": "服务器内部错误：RuntimeError: disk on fire"}
