@@ -70,6 +70,9 @@ def main() -> None:
     # A windowed app may have no console streams; uvicorn and logging need them.
     if sys.stdout is None or sys.stderr is None:
         sys.stdout = sys.stderr = open(os.devnull, "w", encoding="utf-8")
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):  # legacy Windows code pages cannot print Chinese
+            stream.reconfigure(encoding="utf-8", errors="replace")
 
     import threading
     import webbrowser

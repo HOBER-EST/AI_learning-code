@@ -26,6 +26,11 @@ DESKTOP = ROOT / "desktop"
 FRONTEND = ROOT / "frontend"
 NAME = "Learn61A"
 
+# Windows consoles default to a legacy code page that cannot print Chinese.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 
 def run(cmd: list[str], cwd: Path) -> None:
     print("+", " ".join(cmd), flush=True)
