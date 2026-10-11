@@ -15,3 +15,8 @@ frontend/playwright-report/
 .DS_Store
 .idea/
 .vscode/
+
+# Desktop build output
+desktop/build/
+desktop/dist/
+desktop/release/

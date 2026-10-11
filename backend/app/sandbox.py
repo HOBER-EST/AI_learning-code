@@ -2,8 +2,9 @@
 
 Isolation layers (best effort, not a hardened security boundary):
 
-* a fresh ``python -I`` interpreter in a throw-away working directory with a
-  minimal environment;
+* a fresh ``python -I`` interpreter (or, in the packaged desktop app, the app
+  executable in child mode) in a throw-away working directory with a minimal
+  environment;
 * CPU-time, address-space and file-size limits via ``setrlimit`` (applied
   by the child before it runs any student code);
 * a wall-clock timeout that kills the whole process group;
@@ -26,6 +27,10 @@ import threading
 from . import config
 
 CHILD_SCRIPT = os.path.join(os.path.dirname(__file__), "runner", "child.py")
+# The packaged desktop app has no separate Python interpreter: it re-runs its
+# own executable with this flag to act as the child (see desktop/launcher.py).
+CHILD_FLAG = "--learn61a-child"
+FROZEN = bool(getattr(sys, "frozen", False))
 _slots = threading.BoundedSemaphore(config.MAX_CONCURRENT_RUNS)
 
 
@@ -39,28 +44,29 @@ def _failure(kind: str, message: str, detail: str = "") -> dict:
 def run_in_sandbox(request: dict, timeout: float) -> dict:
     """Run ``request`` (see ``child.py``) and return the decoded JSON result."""
     with _slots, tempfile.TemporaryDirectory(prefix="learn61a-") as workdir:
+        request_path = os.path.join(workdir, "request.json")
         result_path = os.path.join(workdir, "result.json")
-        env = {
-            "PATH": "/usr/bin:/bin",
-            "LANG": "C.UTF-8",
-            "PYTHONIOENCODING": "utf-8",
-            "PYTHONHASHSEED": "0",
-            "PYTHONDONTWRITEBYTECODE": "1",
-        }
         # Resource limits are applied by the child itself (see child.py):
         # preexec_fn is not safe in a multi-threaded server.
         request = {**request, "limits": {"cpu": int(timeout) + 1, "memory_mb": config.MEMORY_LIMIT_MB}}
+        with open(request_path, "w", encoding="utf-8") as f:
+            json.dump(request, f)
+        if FROZEN:
+            command = [sys.executable, CHILD_FLAG, request_path, result_path]
+        else:
+            command = [sys.executable, "-I", CHILD_SCRIPT, request_path, result_path]
         proc = subprocess.Popen(
-            [sys.executable, "-I", CHILD_SCRIPT, result_path],
-            stdin=subprocess.PIPE,
+            command,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=workdir,
-            env=env,
-            start_new_session=True,
+            env=_child_env(),
+            start_new_session=sys.platform != "win32",
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         try:
-            _, stderr = proc.communicate(json.dumps(request).encode("utf-8"), timeout=timeout)
+            _, stderr = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
             _kill(proc)
             return _failure(
@@ -77,11 +83,29 @@ def run_in_sandbox(request: dict, timeout: float) -> dict:
         except (OSError, json.JSONDecodeError):
             pass
 
-        if proc.returncode in (-signal.SIGXCPU, -signal.SIGKILL):
+        killed = {-getattr(signal, name) for name in ("SIGXCPU", "SIGKILL") if hasattr(signal, name)}
+        if proc.returncode in killed:
             return _failure("ResourceLimit", "程序超出了 CPU 时间限制。", stderr_text)
         if "MemoryError" in stderr_text:
             return _failure("MemoryError", f"程序超出了 {config.MEMORY_LIMIT_MB}MB 内存限制。", stderr_text)
         return _failure("Crash", f"运行进程异常退出（返回码 {proc.returncode}）。", stderr_text)
+
+
+def _child_env() -> dict:
+    env = {
+        "LANG": "C.UTF-8",
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONHASHSEED": "0",
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+    if sys.platform == "win32":
+        # Windows processes need these to start up correctly.
+        for name in ("SYSTEMROOT", "SYSTEMDRIVE", "PATH", "TEMP", "TMP"):
+            if name in os.environ:
+                env[name] = os.environ[name]
+    else:
+        env["PATH"] = "/usr/bin:/bin"
+    return env
 
 
 def _kill(proc: subprocess.Popen) -> None:

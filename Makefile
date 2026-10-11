@@ -2,7 +2,7 @@ PYTHON ?= python3
 VENV := backend/.venv
 PY := $(VENV)/bin/python
 
-.PHONY: install dev test test-backend test-frontend e2e build serve clean
+.PHONY: install dev test test-backend test-frontend e2e build serve desktop clean
 
 install: $(PY)
 	$(PY) -m pip install -r backend/requirements-dev.txt
@@ -31,5 +31,10 @@ build:
 serve: build
 	cd backend && .venv/bin/python -m uvicorn app.main:app --port 8000
 
+desktop:
+	$(PY) -m pip install pyinstaller pywebview
+	$(PY) desktop/build.py
+	$(PY) desktop/smoke_test.py
+
 clean:
-	rm -rf frontend/dist frontend/test-results backend/.pytest_cache
+	rm -rf frontend/dist frontend/test-results backend/.pytest_cache desktop/build desktop/dist desktop/release

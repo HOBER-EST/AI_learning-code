@@ -1,20 +1,24 @@
 """Entry point of the sandboxed child process.
 
-Usage: python -I child.py RESULT_PATH  (JSON request on stdin)
+Usage: python -I child.py REQUEST_PATH RESULT_PATH
 
 The result file is opened *before* the audit hook is installed, which then
 refuses any file writes, process spawning or network access by student code.
 """
 
+from __future__ import annotations
+
 import json
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-import prelude  # noqa: E402
-import test_runner  # noqa: E402
-import tracer  # noqa: E402
+if __package__:  # imported by the packaged desktop app
+    from . import prelude, test_runner, tracer
+else:  # run as a script: python -I child.py REQUEST_PATH RESULT_PATH
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import prelude  # noqa: E402
+    import test_runner  # noqa: E402
+    import tracer  # noqa: E402
 
 _BLOCKED_EVENTS = (
     "subprocess.Popen",
@@ -61,25 +65,32 @@ def _audit(event, args):
 def _apply_limits(limits: dict) -> None:
     try:
         import resource
-    except ImportError:  # not available on Windows
+    except ImportError:  # not available on Windows; the wall-clock timeout still applies
         return
+
+    def limit(kind, value):
+        try:
+            resource.setrlimit(kind, (value, value))
+        except (ValueError, OSError):  # e.g. macOS does not support RLIMIT_AS
+            pass
+
     cpu = limits.get("cpu")
     if cpu:
-        resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu + 1))
+        limit(resource.RLIMIT_CPU, cpu)
     memory_mb = limits.get("memory_mb")
     if memory_mb:
-        memory = memory_mb * 1024 * 1024
-        resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
-    file_size = 64 * 1024 * 1024
-    resource.setrlimit(resource.RLIMIT_FSIZE, (file_size, file_size))
-    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+        limit(resource.RLIMIT_AS, memory_mb * 1024 * 1024)
+    limit(resource.RLIMIT_FSIZE, 64 * 1024 * 1024)
+    limit(resource.RLIMIT_CORE, 0)
 
 
-def main() -> None:
-    request = json.loads(sys.stdin.read())
+def main(request_path: str | None = None, result_path: str | None = None) -> None:
+    request_path = request_path or sys.argv[1]
+    result_path = result_path or sys.argv[2]
+    with open(request_path, encoding="utf-8") as f:
+        request = json.load(f)
     _apply_limits(request.get("limits") or {})
-    out = open(sys.argv[1], "w", encoding="utf-8")
-    sys.stdin = open(os.devnull, encoding="utf-8")
+    out = open(result_path, "w", encoding="utf-8")
     sys.addaudithook(_audit)
 
     mode = request["mode"]

@@ -22,6 +22,14 @@
 
 ## 快速开始
 
+### 桌面版（无需安装 Python / Node）
+
+到 GitHub **Releases** 下载对应系统的压缩包（Windows / macOS / Linux），解压后双击 `Learn61A` 即可，会打开一个独立窗口。安装包未做付费代码签名，首次打开的放行步骤见 [使用说明 · 桌面版](docs/USAGE.md#方式一桌面版推荐无需安装-python--node)。
+
+发布新版本：推送形如 `v1.0.0` 的 tag，GitHub Actions（`.github/workflows/desktop.yml`）会在三个系统上分别打包、启动冒烟测试并上传到 Release。本地打包：`make desktop`。
+
+### 从源码运行
+
 需要 Python 3.10+ 与 Node.js 20.19+。
 
 ```bash
@@ -69,6 +77,7 @@ frontend/
     lib/               调用树布局、堆对象布局等纯函数（有单元测试）
     pages/             代码实验室、练习、练习工作区、WWPD、使用说明
   e2e/                 Playwright 端到端测试
+desktop/               桌面版：launcher.py（启动器）、build.py（打包）、smoke_test.py（冒烟测试）
 docs/USAGE.md          使用说明
 ```
 

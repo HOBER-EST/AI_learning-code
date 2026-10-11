@@ -7,11 +7,13 @@ instead of the whole run.
 
 from __future__ import annotations
 
+import _thread
 import doctest
 import io
 import linecache
 import signal
 import sys
+import threading
 import traceback
 import types
 
@@ -29,12 +31,35 @@ def _on_alarm(signum, frame):
     raise ExampleTimeout("运行超时：可能存在无限循环或无限递归")
 
 
+# POSIX has interval timers (SIGALRM). Windows does not, so there a watchdog
+# thread "delivers" SIGINT to the main thread, whose handler raises the same
+# ExampleTimeout. Both raise inside the running example only.
+USE_ITIMER = hasattr(signal, "setitimer")
+_watchdog: threading.Timer | None = None
+
+
+def _install_alarm() -> None:
+    signal.signal(signal.SIGALRM if USE_ITIMER else signal.SIGINT, _on_alarm)
+
+
 def _arm(seconds: float) -> None:
-    signal.setitimer(signal.ITIMER_REAL, seconds)
+    global _watchdog
+    if USE_ITIMER:
+        signal.setitimer(signal.ITIMER_REAL, seconds)
+        return
+    _disarm()
+    _watchdog = threading.Timer(seconds, _thread.interrupt_main, args=(signal.SIGINT,))
+    _watchdog.daemon = True
+    _watchdog.start()
 
 
 def _disarm() -> None:
-    signal.setitimer(signal.ITIMER_REAL, 0)
+    global _watchdog
+    if USE_ITIMER:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+    elif _watchdog is not None:
+        _watchdog.cancel()
+        _watchdog = None
 
 
 def _clip(text: str) -> str:
@@ -167,7 +192,7 @@ def run_tests(
     example_timeout: float = 2.0,
     builtins_dict: dict | None = None,
 ) -> dict:
-    signal.signal(signal.SIGALRM, _on_alarm)
+    _install_alarm()
     stdout = io.StringIO()
     old_stdout = sys.stdout
     sys.stdout = stdout
@@ -224,7 +249,7 @@ def run_tests(
 
 def run_program(code: str, timeout: float = 5.0, builtins_dict: dict | None = None) -> dict:
     """Execute a program once and capture its output."""
-    signal.signal(signal.SIGALRM, _on_alarm)
+    _install_alarm()
     stdout = io.StringIO()
     old_stdout = sys.stdout
     sys.stdout = stdout
