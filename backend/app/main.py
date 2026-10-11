@@ -71,7 +71,10 @@ def _with_analysis(code: str, results: dict) -> dict:
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"status": "ok", "tutor": "claude" if tutor.claude_enabled() else "rules"}
+    health = {"status": "ok", "tutor": "claude" if tutor.claude_enabled() else "rules"}
+    if config.WINDOW_ERROR:
+        health["window_error"] = config.WINDOW_ERROR
+    return health
 
 
 @app.post("/api/run")

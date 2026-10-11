@@ -41,11 +41,15 @@ export function App() {
   const route = useHashRoute();
   const [theme, cycleTheme] = useTheme();
   const [tutor, setTutor] = useState<"claude" | "rules" | "offline" | null>(null);
+  const [windowError, setWindowError] = useState<string | null>(null);
 
   useEffect(() => {
     api
       .health()
-      .then((h) => setTutor(h.tutor))
+      .then((h) => {
+        setTutor(h.tutor);
+        setWindowError(h.window_error ?? null);
+      })
       .catch(() => setTutor("offline"));
   }, []);
 
@@ -84,6 +88,19 @@ export function App() {
         <div className="page" style={{ paddingBottom: 0 }}>
           <div className="alert err">
             无法连接后端服务。请先启动后端：<code>cd backend &amp;&amp; uvicorn app.main:app --port 8000</code>
+          </div>
+        </div>
+      )}
+      {windowError && (
+        <div className="page" style={{ paddingBottom: 0 }}>
+          <div className="alert warn row" style={{ justifyContent: "space-between" }}>
+            <span>
+              桌面窗口没能打开，已改用浏览器显示（功能不受影响）。原因：<code>{windowError}</code>。详细日志在用户目录下的{" "}
+              <code>.learn61a/desktop.log</code>。
+            </span>
+            <button className="small ghost" onClick={() => setWindowError(null)} aria-label="关闭提示">
+              ✕
+            </button>
           </div>
         </div>
       )}

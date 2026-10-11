@@ -61,14 +61,23 @@ def build_app() -> Path:
         "--add-data", f"{dist}{os.pathsep}frontend_dist",
         "--collect-submodules", "uvicorn",
         "--collect-submodules", "app",
+        # The native window: pywebview picks its GUI backend at run time.
+        "--collect-submodules", "webview",
+        "--collect-data", "webview",
         "--distpath", str(out),
         "--workpath", str(work),
         "--specpath", str(work),
     ]
     if sys.platform in ("win32", "darwin"):
         cmd.append("--windowed")  # no console window; Linux keeps one for the browser fallback
+    if sys.platform == "win32":
+        # pywebview's WinForms/WebView2 backend runs on .NET through pythonnet.
+        cmd += ["--hidden-import", "clr", "--collect-all", "pythonnet", "--collect-all", "clr_loader"]
     if sys.platform == "darwin":
         cmd += ["--osx-bundle-identifier", "edu.learn61a.recursionlab"]
+        # Cocoa/WebKit bindings used by pywebview's macOS backend.
+        for module in ("AppKit", "Foundation", "WebKit", "Quartz", "objc"):
+            cmd += ["--collect-submodules", module]
     run(cmd, ROOT)
     return out / (f"{NAME}.app" if sys.platform == "darwin" else NAME)
 

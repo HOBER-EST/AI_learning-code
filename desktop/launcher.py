@@ -66,22 +66,53 @@ def _wait_until_up(url: str, timeout: float = 20.0) -> bool:
     return False
 
 
-def _open_window(url: str) -> bool:
+def _open_window(url: str) -> str | None:
+    """Show the UI in a native window. Returns None on success, else why it failed."""
+    log = logging.getLogger(__name__)
     try:
         import webview
-    except ImportError:
-        return False
-    try:
+
         webview.create_window(TITLE, url, width=1440, height=920, min_size=(960, 640))
         webview.start()
-        return True
-    except Exception:  # noqa: BLE001 - no usable GUI backend on this system
-        return False
+        return None
+    except Exception as e:  # noqa: BLE001 - no usable GUI backend on this system
+        log.exception("could not open a native window; falling back to the browser")
+        return f"{type(e).__name__}: {e}"
+
+
+def _check_gui(result_file: str) -> None:
+    """``--check-gui FILE``: open a real window, wait for it to load, close it.
+
+    Used by CI to prove the packaged app gets a native window instead of
+    silently falling back to the browser. Writes a JSON verdict to FILE.
+    """
+    import json
+    import traceback
+
+    result = {"ok": False, "gui": None, "error": None}
+    try:
+        import webview
+
+        window = webview.create_window(TITLE, html="<h1>61A</h1>")
+
+        def probe():
+            result["ok"] = window.events.loaded.wait(60)
+            result["gui"] = getattr(webview.guilib, "__name__", None)
+            window.destroy()
+
+        webview.start(probe)
+    except Exception:  # noqa: BLE001
+        result["error"] = traceback.format_exc()
+    with open(result_file, "w", encoding="utf-8") as f:
+        json.dump(result, f)
 
 
 def main() -> None:
     if len(sys.argv) >= 4 and sys.argv[1] == CHILD_FLAG:
         _run_child()
+        return
+    if len(sys.argv) >= 3 and sys.argv[1] == "--check-gui":
+        _check_gui(sys.argv[2])
         return
 
     # A windowed app may have no console streams; uvicorn and logging need them.
@@ -113,7 +144,13 @@ def main() -> None:
         print(f"后端启动失败，详见日志：{log_file}", file=sys.stderr)
         sys.exit(1)
 
-    if "--browser" in args or not _open_window(url):
+    window_error = None if "--browser" in args else _open_window(url)
+    if "--browser" in args or window_error:
+        if window_error:
+            # Shown by the UI so the user knows why they got a browser tab.
+            import app.config
+
+            app.config.WINDOW_ERROR = window_error
         webbrowser.open(url)
         print(f"{TITLE} 已在浏览器中打开：{url}\n关闭此窗口（或按 Ctrl+C）即可退出。")
         try:

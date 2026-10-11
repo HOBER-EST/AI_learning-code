@@ -48,6 +48,12 @@ jobs:
       - name: Smoke test the packaged app
         run: python desktop/smoke_test.py
 
+      # Linux users fall back to the browser when GTK/Qt web views are missing;
+      # Windows and macOS must get a real app window.
+      - name: Check the native window opens
+        if: runner.os != 'Linux'
+        run: python desktop/check_gui.py
+
       - uses: actions/upload-artifact@v4
         with:
           name: Learn61A-${{ runner.os }}

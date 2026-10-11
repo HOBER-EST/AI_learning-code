@@ -63,7 +63,7 @@ function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 export const api = {
-  health: () => request<{ status: string; tutor: "claude" | "rules" }>("/api/health"),
+  health: () => request<{ status: string; tutor: "claude" | "rules"; window_error?: string }>("/api/health"),
   run: (code: string) => post<RunResult>("/api/run", { code }),
   test: (code: string, tests?: string) => post<TestResult>("/api/test", { code, tests }),
   trace: (code: string, maxSteps?: number) => post<TraceResult>("/api/trace", { code, max_steps: maxSteps }),

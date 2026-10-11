@@ -16,3 +16,6 @@ else:
 FRONTEND_DIST = os.environ.get("LEARN_FRONTEND_DIST", _default_dist)
 # Set by the desktop launcher so error messages can point to its log file.
 LOG_FILE = os.environ.get("LEARN_LOG_FILE", "")
+# Set by the desktop launcher when it had to fall back from a native window
+# to the browser; the UI explains it.
+WINDOW_ERROR: str | None = None
