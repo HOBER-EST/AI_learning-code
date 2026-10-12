@@ -63,4 +63,6 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          name: 61A 递归实验室 ${{ github.ref_name }}
+          body_path: desktop/RELEASE_NOTES.md
           files: desktop/release/*
