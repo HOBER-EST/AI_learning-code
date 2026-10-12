@@ -2,11 +2,17 @@ name: Desktop app
 
 # Builds the stand-alone desktop app on Windows, macOS and Linux.
 # - Every run uploads the packages as workflow artifacts.
-# - Pushing a tag like v1.0.0 also publishes them on a GitHub Release.
+# - Pushing a tag like v1.0.0, or running the workflow manually with
+#   release_tag set, also publishes them on a GitHub Release.
 # Branch pushes only build when the packaging itself changes (macOS runner
 # minutes are expensive); tag pushes and manual runs always build.
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "To publish a release, a new version tag such as v1.0.0 (created on the commit being built). Leave empty to only build."
+        required: false
+        default: ""
   push:
     branches: ["**"]
     tags: ["v*"]
@@ -59,10 +65,26 @@ jobs:
           name: Learn61A-${{ runner.os }}
           path: desktop/release/*
 
+  # One release job after every platform built and passed its checks, so the
+  # three builds never race to create the same release.
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          name: 61A 递归实验室 ${{ github.ref_name }}
+          # On a manual run the tag does not exist yet: it is created on this commit.
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          name: 61A 递归实验室 ${{ inputs.release_tag || github.ref_name }}
           body_path: desktop/RELEASE_NOTES.md
-          files: desktop/release/*
+          files: dist/*

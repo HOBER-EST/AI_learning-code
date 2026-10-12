@@ -27,7 +27,7 @@
 
 到 GitHub **Releases** 下载对应系统的压缩包（Windows / macOS / Linux），解压后双击 `Learn61A` 即可，会打开一个独立窗口。安装包未做付费代码签名，首次打开的放行步骤见 [使用说明 · 桌面版](docs/USAGE.md#方式一桌面版推荐无需安装-python--node)。
 
-发布新版本：推送形如 `v1.0.0` 的 tag，GitHub Actions（`.github/workflows/desktop.yml`）会在三个系统上分别打包、启动冒烟测试并上传到 Release。本地打包：`make desktop`。
+发布新版本（二选一）：推送形如 `v1.0.0` 的 tag；或在 GitHub 的 Actions → “Desktop app” → Run workflow 中填写 `release_tag`（如 `v1.1.0`）。GitHub Actions（`.github/workflows/desktop.yml`）会在三个系统上分别打包并测试，全部通过后创建该版本的 Release 并上传安装包。本地打包：`make desktop`。
 
 ### 从源码运行
 
